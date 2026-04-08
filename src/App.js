@@ -11,10 +11,22 @@ import {
   Scale, 
   User,
   RefreshCw,
-  Heart
+  Heart,
+  LogIn,
+  UserPlus,
+  LogOut,
+  UserCircle,
+  LayoutDashboard,
+  Settings,
+  Mail,
+  Lock,
+  CreditCard,
+  Target
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
+import { db } from './firebase';
+import { doc, setDoc, updateDoc, getDoc } from 'firebase/firestore';
 import './App.css';
 
 const XRayScanner = () => {
@@ -362,8 +374,213 @@ const BoneHealthSection = () => (
   </section>
 );
 
-const Navbar = () => (
-  <nav className="nav-bar fade-in" style={{ padding: '1.5rem 5%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+const AuthModal = ({ isOpen, onClose, mode, setMode, onAuthSuccess }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [details, setDetails] = useState({ name: '', age: '', weight: '', height: '' });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const userData = {
+      email,
+      ...details,
+      isLoggedIn: true,
+      lastScan: 'None',
+      riskScore: '--'
+    };
+    onAuthSuccess(userData);
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div style={{ 
+      position: 'fixed', 
+      top: 0, 
+      left: 0, 
+      width: '100%', 
+      height: '100%', 
+      background: 'rgba(0,0,0,0.8)', 
+      backdropFilter: 'blur(8px)',
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      zIndex: 1000 
+    }}>
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="glass" 
+        style={{ width: '100%', maxWidth: '450px', padding: '3rem', position: 'relative' }}
+      >
+        <button 
+          onClick={onClose} 
+          style={{ position: 'absolute', top: '20px', right: '20px', background: 'transparent', border: 'none', color: '#fff', fontSize: '1.5rem', cursor: 'pointer' }}
+        >
+          ×
+        </button>
+        
+        <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+          <div style={{ background: 'var(--primary)', width: '60px', height: '60px', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
+            <Activity color="white" size={32} />
+          </div>
+          <h2 style={{ fontSize: '2rem' }}>{mode === 'login' ? 'Welcome Back' : 'Create Account'}</h2>
+          <p style={{ color: 'var(--text-muted)' }}>{mode === 'login' ? 'Enter your credentials to access your scans' : 'Register for early osteoporosis detection'}</p>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          {mode === 'register' && (
+            <>
+              <div className="form-group">
+                <label><User size={14} style={{ marginRight: '5px' }} /> Full Name</label>
+                <input type="text" required value={details.name} onChange={(e) => setDetails({...details, name: e.target.value})} placeholder="Kanishka" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group">
+                  <label>Age</label>
+                  <input type="number" required value={details.age} onChange={(e) => setDetails({...details, age: e.target.value})} placeholder="24" />
+                </div>
+                <div className="form-group">
+                  <label>Height (cm)</label>
+                  <input type="number" required value={details.height} onChange={(e) => setDetails({...details, height: e.target.value})} placeholder="175" />
+                </div>
+              </div>
+            </>
+          )}
+          
+          <div className="form-group">
+            <label><Mail size={14} style={{ marginRight: '5px' }} /> Email Address</label>
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" />
+          </div>
+          <div className="form-group">
+            <label><Lock size={14} style={{ marginRight: '5px' }} /> Password</label>
+            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+          </div>
+
+          <button className="btn btn-primary" style={{ width: '100%', height: '3.5rem', justifyContent: 'center', marginTop: '1rem' }}>
+            {mode === 'login' ? 'Sign In' : 'Complete Registration'}
+          </button>
+        </form>
+
+        <p style={{ textAlign: 'center', marginTop: '2rem', color: 'var(--text-muted)' }}>
+          {mode === 'login' ? "Don't have an account? " : "Already registered? "}
+          <span 
+            onClick={() => setMode(mode === 'login' ? 'register' : 'login')} 
+            style={{ color: 'var(--primary)', cursor: 'pointer', fontWeight: 600 }}
+          >
+            {mode === 'login' ? 'Sign Up' : 'Log In'}
+          </span>
+        </p>
+      </motion.div>
+    </div>
+  );
+};
+
+const PatientDashboard = ({ isOpen, user, onClose, onLogout }) => {
+  if (!user || !isOpen) return null;
+
+  return (
+    <motion.div 
+      initial={{ x: '100%', opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: '100%', opacity: 0 }}
+      transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+      style={{ 
+      position: 'fixed', 
+      top: 0, 
+      right: 0, 
+      width: '100%', 
+      maxWidth: '500px', 
+      height: '100%', 
+      background: 'rgba(2, 6, 23, 0.95)', 
+      backdropFilter: 'blur(20px)',
+      boxShadow: '-10px 0 30px rgba(0,0,0,0.5)',
+      zIndex: 1000,
+      padding: '3rem',
+      overflowY: 'auto',
+      borderLeft: '1px solid var(--glass-border)'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ background: 'var(--primary)', padding: '10px', borderRadius: '12px' }}>
+            <LayoutDashboard color="white" size={24} />
+          </div>
+          <h2 style={{ margin: 0 }}>Patient Dashboard</h2>
+        </div>
+        <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#fff', width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer' }}>×</button>
+      </div>
+
+      <div className="glass" style={{ padding: '2rem', marginBottom: '2rem', textAlign: 'center' }}>
+        <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), #4338ca)', margin: '0 auto 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 800, border: '4px solid rgba(255,255,255,0.1)' }}>
+          {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+        </div>
+        <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>{user.name || 'Anonymous User'}</h3>
+        <p style={{ color: 'var(--text-muted)' }}>{user.email}</p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2.5rem' }}>
+        <div className="glass" style={{ padding: '1.5rem' }}>
+          <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>AGE</label>
+          <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>{user.age || '--'} yrs</div>
+        </div>
+        <div className="glass" style={{ padding: '1.5rem' }}>
+          <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>HEIGHT</label>
+          <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>{user.height || '--'} cm</div>
+        </div>
+        <div className="glass" style={{ padding: '1.5rem' }}>
+          <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>RISK SCORE</label>
+          <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--primary)' }}>{user.riskScore}%</div>
+        </div>
+        <div className="glass" style={{ padding: '1.5rem' }}>
+          <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '5px' }}>STATUS</label>
+          <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--secondary)' }}>Active</div>
+        </div>
+      </div>
+
+      <h4 style={{ marginBottom: '1.5rem' }}>Recent Activity</h4>
+      <div style={{ display: 'grid', gap: '1rem', marginBottom: '3rem' }}>
+        <div className="glass" style={{ padding: '1.2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ background: 'rgba(99, 102, 241, 0.1)', padding: '10px', borderRadius: '10px' }}>
+            <Activity size={20} color="var(--primary)" />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>Baseline Bone Density Scan</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Aug 12, 2026 • AI Analyzed</div>
+          </div>
+        </div>
+        <div className="glass" style={{ padding: '1.2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '10px', borderRadius: '10px' }}>
+            <Target size={20} color="var(--secondary)" />
+          </div>
+          <div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>Calcium Intake Goal Set</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Aug 10, 2026 • 1200mg/day</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: '1rem' }}>
+        <button className="btn btn-secondary" style={{ flex: 1 }}><Settings size={18} /> Settings</button>
+        <button onClick={onLogout} className="btn btn-primary" style={{ flex: 1, background: '#ef4444' }}><LogOut size={18} /> Logout</button>
+      </div>
+    </motion.div>
+  );
+};
+
+const Navbar = ({ onOpenAuth, loggedInUser, onOpenDashboard }) => (
+  <nav className="nav-bar fade-in" style={{ 
+    padding: '1.5rem 5%', 
+    display: 'flex', 
+    justifyContent: 'space-between', 
+    alignItems: 'center',
+    position: 'sticky',
+    top: 0,
+    zIndex: 100,
+    background: 'rgba(2, 6, 23, 0.8)',
+    backdropFilter: 'blur(10px)',
+    borderBottom: '1px solid var(--glass-border)'
+  }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
       <div style={{ background: 'var(--primary)', padding: '8px', borderRadius: '10px' }}>
         <Activity color="white" size={24} />
@@ -373,7 +590,34 @@ const Navbar = () => (
     <div style={{ display: 'flex', gap: '2rem', alignItems: 'center' }}>
       <a href="#learn" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontWeight: 500 }}>Learn & Assess</a>
       <a href="#about" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontWeight: 500 }}>About</a>
-      <a href="#detection" className="btn btn-primary" style={{ padding: '0.5rem 1.2rem', fontSize: '0.9rem' }}>Get Started</a>
+      
+      {loggedInUser ? (
+        <div 
+          onClick={onOpenDashboard}
+          style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '10px', 
+            background: 'rgba(255,255,255,0.05)', 
+            padding: '5px 15px 5px 5px', 
+            borderRadius: '50px', 
+            cursor: 'pointer',
+            border: '1px solid var(--glass-border)',
+            transition: 'var(--transition)'
+          }}
+          onMouseOver={(e) => e.currentTarget.style.borderColor = 'var(--primary)'}
+          onMouseOut={(e) => e.currentTarget.style.borderColor = 'var(--glass-border)'}
+        >
+          <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+            {loggedInUser.name ? loggedInUser.name.charAt(0).toUpperCase() : <UserCircle size={20} />}
+          </div>
+          <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{loggedInUser.name.split(' ')[0]}</span>
+        </div>
+      ) : (
+        <button onClick={() => onOpenAuth('login')} className="btn btn-primary" style={{ padding: '0.5rem 1.2rem', fontSize: '0.9rem' }}>
+          <LogIn size={18} /> Sign In
+        </button>
+      )}
     </div>
   </nav>
 );
@@ -562,7 +806,7 @@ const XRayUpload = () => {
   );
 };
 
-const DetectionCenter = () => {
+const DetectionCenter = ({ user, setUser }) => {
   const [mode, setMode] = useState('data'); // 'data' or 'xray'
 
   return (
@@ -613,23 +857,52 @@ const DetectionCenter = () => {
       </div>
 
       <div className="glass glass-card">
-        {mode === 'data' ? <PredictorForm /> : <XRayUpload />}
+        {mode === 'data' ? (
+          <PredictorForm 
+            loggedInUser={user} 
+            onPredictionUpdate={async (score) => {
+              const currentEmail = user?.email;
+              setUser(prev => {
+                const updated = { ...prev, riskScore: score };
+                localStorage.setItem('osteo_user', JSON.stringify(updated));
+                return updated;
+              });
+
+              // Sync to Firebase
+              if (currentEmail) {
+                try {
+                  const userRef = doc(db, "patients", currentEmail);
+                  await updateDoc(userRef, { riskScore: score });
+                } catch (err) {
+                  console.error("Firebase Sync Error:", err);
+                }
+              }
+            }}
+          />
+        ) : <XRayUpload />}
       </div>
     </section>
   );
 };
 
-const PredictorForm = () => {
+const PredictorForm = ({ loggedInUser, onPredictionUpdate }) => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [formData, setFormData] = useState({
-    age: '',
-    gender: 'female',
-    bmd: '',
+    age: loggedInUser?.age || '',
+    gender: loggedInUser?.gender || 'female',
+    hormonalChanges: 'no',
     familyHistory: 'no',
-    priorFracture: 'no',
+    race: 'asian',
+    bodyWeight: loggedInUser?.weight || '',
+    calciumIntake: 'low',
+    vitaminDIntake: 'low',
+    physicalActivity: 'sedentary',
     smoking: 'no',
-    activity: 'moderate'
+    alcohol: 'never',
+    medicalConditions: 'none',
+    medications: 'none',
+    priorFractures: 'no'
   });
 
   const handleChange = (e) => {
@@ -641,40 +914,38 @@ const PredictorForm = () => {
     setLoading(true);
     setResult(null);
 
-    // Simulate AI Processing time
+    // AI Logic Simulation based on comprehensive inputs
     setTimeout(() => {
-      // Simple logic simulator for "ML" effect
-      // Risk factors: Age > 60, BMD < -1.0, Female, Family History
       let score = 0;
-      if (parseInt(formData.age) > 60) score += 25;
-      if (parseInt(formData.age) > 40) score += 10;
-      if (parseFloat(formData.bmd) < -1.0) score += 40;
-      if (parseFloat(formData.bmd) < -2.5) score += 25;
-      if (formData.gender === 'female') score += 15;
-      if (formData.familyHistory === 'yes') score += 20;
-      if (formData.priorFracture === 'yes') score += 25;
-      if (formData.smoking === 'yes') score += 10;
+      if (parseInt(formData.age) > 65) score += 30;
+      else if (parseInt(formData.age) > 50) score += 15;
       
+      if (formData.hormonalChanges === 'yes') score += 25;
+      if (formData.familyHistory === 'yes') score += 15;
+      if (formData.calciumIntake === 'low') score += 10;
+      if (formData.vitaminDIntake === 'low') score += 10;
+      if (formData.physicalActivity === 'sedentary') score += 15;
+      if (formData.smoking === 'yes') score += 10;
+      if (formData.alcohol === 'high') score += 15;
+      if (formData.medicalConditions !== 'none') score += 20;
+      if (formData.medications !== 'none') score += 15;
+      if (formData.priorFractures === 'yes') score += 25;
+
       let level = 'Low';
       let color = 'var(--secondary)';
-      if (score > 60) {
-        level = 'High';
-        color = '#ef4444';
-      } else if (score > 30) {
-        level = 'Moderate';
-        color = '#f59e0b';
+      if (score > 65) { level = 'High'; color = '#ef4444'; }
+      else if (score > 35) { level = 'Moderate'; color = '#f59e0b'; }
+
+      const finalResult = { score, level, color };
+      setResult(finalResult);
+      setLoading(false);
+      
+      if (onPredictionUpdate) {
+        onPredictionUpdate(Math.min(100, score).toString());
       }
 
-      setResult({ score, level, color });
-      setLoading(false);
-
       if (level === 'Low') {
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-          colors: ['#10b981', '#6366f1', '#ffffff']
-        });
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
       }
     }, 2500);
   };
@@ -682,95 +953,136 @@ const PredictorForm = () => {
   return (
     <>
       <div style={{ marginBottom: '2.5rem' }}>
-        <h2 style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>Patient Assessment Tool</h2>
-        <p>Please provide precise clinical data for accurate AI risk modeling.</p>
+        <h2 style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>Advanced Diagnostic Modeling</h2>
+        <p>Please enter comprehensive clinical parameters for your AI prediction.</p>
       </div>
 
-        <form onSubmit={handlePredict}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-            <div className="form-group">
-              <label><User size={14} style={{ marginRight: '5px' }} /> Age</label>
-              <input 
-                type="number" 
-                name="age" 
-                placeholder="Years (e.g. 55)" 
-                required 
-                onChange={handleChange}
-                value={formData.age}
-              />
-            </div>
-            <div className="form-group">
-              <label><Scale size={14} style={{ marginRight: '5px' }} /> Gender</label>
-              <select name="gender" onChange={handleChange} value={formData.gender}>
-                <option value="female">Female</option>
-                <option value="male">Male</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
+      <form onSubmit={handlePredict}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
+          <div className="form-group">
+            <label><User size={14} style={{ marginRight: '5px' }} /> Age</label>
+            <input type="number" name="age" required onChange={handleChange} value={formData.age} placeholder="Years" />
           </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-            <div className="form-group">
-              <label><Activity size={14} style={{ marginRight: '5px' }} /> T-Score (BMD)</label>
-              <input 
-                type="number" 
-                step="0.1" 
-                name="bmd" 
-                placeholder="e.g. -1.5" 
-                required 
-                onChange={handleChange}
-                value={formData.bmd}
-              />
-            </div>
-            <div className="form-group">
-              <label><Zap size={14} style={{ marginRight: '5px' }} /> Activity Level</label>
-              <select name="activity" onChange={handleChange} value={formData.activity}>
-                <option value="sedentary">Sedentary</option>
-                <option value="moderate">Moderate</option>
-                <option value="active">Very Active</option>
-              </select>
-            </div>
+          <div className="form-group">
+            <label>Gender</label>
+            <select name="gender" onChange={handleChange} value={formData.gender}>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+              <option value="other">Other</option>
+            </select>
           </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
-            <div className="form-group">
-              <label>Family History</label>
-              <select name="familyHistory" onChange={handleChange} value={formData.familyHistory}>
-                <option value="no">No</option>
-                <option value="yes">Yes</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Prior Fracture</label>
-              <select name="priorFracture" onChange={handleChange} value={formData.priorFracture}>
-                <option value="no">No</option>
-                <option value="yes">Yes</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label>Smoking</label>
-              <select name="smoking" onChange={handleChange} value={formData.smoking}>
-                <option value="no">No</option>
-                <option value="yes">Yes</option>
-              </select>
-            </div>
+          <div className="form-group">
+            <label>Race/Ethnicity</label>
+            <select name="race" onChange={handleChange} value={formData.race}>
+              <option value="asian">Asian</option>
+              <option value="african">African American</option>
+              <option value="caucasian">Caucasian</option>
+              <option value="hispanic">Hispanic</option>
+            </select>
           </div>
+        </div>
 
-          <button 
-            type="submit" 
-            className="btn btn-primary" 
-            style={{ width: '100%', justifyContent: 'center', height: '3.5rem' }}
-            disabled={loading}
-          >
-            {loading ? (
-              <>
-                <RefreshCw className="spin" size={20} /> Analyzing Neural Patterns...
-              </>
-            ) : (
-              <>Run AI Diagnostic</>
-            )}
-          </button>
-        </form>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
+          <div className="form-group">
+            <label>Hormonal Changes</label>
+            <select name="hormonalChanges" onChange={handleChange} value={formData.hormonalChanges}>
+              <option value="no">Normal</option>
+              <option value="yes">Significant (e.g. Menopause)</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Family History</label>
+            <select name="familyHistory" onChange={handleChange} value={formData.familyHistory}>
+              <option value="no">No History</option>
+              <option value="yes">Yes (Fractures/Osteoporosis)</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Prior Fractures</label>
+            <select name="priorFractures" onChange={handleChange} value={formData.priorFractures}>
+              <option value="no">No Prior Fractures</option>
+              <option value="yes">Yes (Bone Trauma)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
+          <div className="form-group">
+            <label>Calcium Intake</label>
+            <select name="calciumIntake" onChange={handleChange} value={formData.calciumIntake}>
+              <option value="low">Low {"<"} 700mg/day</option>
+              <option value="adequate">Adequate (800-1200mg/day)</option>
+              <option value="high">High {">"} 1200mg/day</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Vitamin D Intake</label>
+            <select name="vitaminDIntake" onChange={handleChange} value={formData.vitaminDIntake}>
+              <option value="low">Low (Deficiency)</option>
+              <option value="adequate">Adequate (Daily Exposure)</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Physical Activity</label>
+            <select name="physicalActivity" onChange={handleChange} value={formData.physicalActivity}>
+              <option value="sedentary">Sedentary</option>
+              <option value="moderate">Moderate Exercise</option>
+              <option value="active">High Impact/Resistance</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
+          <div className="form-group">
+            <label>Medical Conditions</label>
+            <select name="medicalConditions" onChange={handleChange} value={formData.medicalConditions}>
+              <option value="none">None</option>
+              <option value="arthritis">Rheumatoid Arthritis</option>
+              <option value="diabetes">Diabetes (Type 1/2)</option>
+              <option value="hyperthyroid">Hyperthyroidism</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Medications</label>
+            <select name="medications" onChange={handleChange} value={formData.medications}>
+              <option value="none">None</option>
+              <option value="corticosteroids">Corticosteroids</option>
+              <option value="anticonvulsants">Anticonvulsants</option>
+              <option value="ppi">PPIs / Antacids</option>
+            </select>
+          </div>
+          <div className="form-group">
+             <label>Body Weight (kg)</label>
+             <input type="number" name="bodyWeight" required onChange={handleChange} value={formData.bodyWeight} placeholder="kg" />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
+          <div className="form-group">
+            <label>Smoking</label>
+            <select name="smoking" onChange={handleChange} value={formData.smoking}>
+              <option value="no">Non-Smoker</option>
+              <option value="yes">Current Smoker</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Alcohol Consumption</label>
+            <select name="alcohol" onChange={handleChange} value={formData.alcohol}>
+              <option value="never">Never / Occasional</option>
+              <option value="moderate">Moderate (1-2 units/day)</option>
+              <option value="high">High (> 3 units/day)</option>
+            </select>
+          </div>
+        </div>
+
+        <button className="btn btn-primary" style={{ width: '100%', height: '3.5rem', justifyContent: 'center' }} disabled={loading}>
+          {loading ? (
+            <><RefreshCw className="spin" size={20} /> Processing Neural Risk Data...</>
+          ) : (
+            <>Calculate Diagnostic Score</>
+          )}
+        </button>
+      </form>
 
         <AnimatePresence>
           {result && (
@@ -883,16 +1195,93 @@ const Footer = () => (
 );
 
 function App() {
+  const [user, setUser] = useState(null);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState('login');
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('osteo_user');
+    if (savedUser) {
+      const userObj = JSON.parse(savedUser);
+      setUser(userObj);
+      
+      // Attempt to refresh from Firestore for latest data
+      const refreshData = async () => {
+        try {
+          const userRef = doc(db, "patients", userObj.email);
+          const snap = await getDoc(userRef);
+          if (snap.exists()) {
+            const latestData = snap.data();
+            setUser(latestData);
+            localStorage.setItem('osteo_user', JSON.stringify(latestData));
+          }
+        } catch (err) {
+          console.warn("Firestore background refresh failed:", err);
+        }
+      };
+      refreshData();
+    }
+  }, []);
+
+  const handleAuthSuccess = async (userData) => {
+    setUser(userData);
+    localStorage.setItem('osteo_user', JSON.stringify(userData));
+
+    // Store in Firebase Firestore
+    try {
+      const userRef = doc(db, "patients", userData.email);
+      await setDoc(userRef, userData, { merge: true });
+    } catch (err) {
+      console.error("Firebase Auth Storage Error:", err);
+    }
+
+    confetti({
+      particleCount: 150,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('osteo_user');
+    setIsDashboardOpen(false);
+  };
+
   return (
     <div className="app-container">
-      <Navbar />
+      <Navbar 
+        loggedInUser={user} 
+        onOpenAuth={(mode) => { setAuthMode(mode); setIsAuthOpen(true); }}
+        onOpenDashboard={() => setIsDashboardOpen(true)}
+      />
       <Hero />
       <FeatureSection />
-      <DetectionCenter />
+      <DetectionCenter user={user} setUser={setUser} />
       <KnowledgeQuiz />
       <BoneHealthSection />
       <InfoSection />
       <Footer />
+
+      <AuthModal 
+        isOpen={isAuthOpen} 
+        onClose={() => setIsAuthOpen(false)} 
+        mode={authMode} 
+        setMode={setAuthMode}
+        onAuthSuccess={handleAuthSuccess}
+      />
+
+      <AnimatePresence>
+        {isDashboardOpen && (
+          <PatientDashboard 
+            isOpen={isDashboardOpen}
+            user={user} 
+            onClose={() => setIsDashboardOpen(false)} 
+            onLogout={handleLogout}
+          />
+        )}
+      </AnimatePresence>
       
       <style>{`
         .spin {
